@@ -1,0 +1,6 @@
+*.o
+cash
+377shell.c
+.vscode
+.env
+obj
