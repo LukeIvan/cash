@@ -3,6 +3,13 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <dirent.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <sys/sysmacros.h>
+#include <pwd.h>
+#include <grp.h>
+#include <time.h>
+#include <limits.h>
 #include "../include/builtins.h"
 
 /*
@@ -42,31 +49,126 @@ int lsaFilter(const struct dirent* entryList)
     return entryList->d_name[0] != 46;
 }
 
+void printFilePermissions(mode_t mode) 
+{
+    if (S_ISDIR(mode)) printf("d");
+    else if (S_ISLNK(mode)) printf("l");
+    else if (S_ISFIFO(mode)) printf("p");
+    else if (S_ISSOCK(mode)) printf("s");
+    else if (S_ISCHR(mode)) printf("c");
+    else if (S_ISBLK(mode)) printf("b");
+    else printf("-");
+    
+    printf(mode & S_IRUSR ? "r" : "-");
+    printf(mode & S_IWUSR ? "w" : "-");
+    printf(mode & S_IXUSR ? "x" : "-");
+    
+    printf(mode & S_IRGRP ? "r" : "-");
+    printf(mode & S_IWGRP ? "w" : "-");
+    printf(mode & S_IXGRP ? "x" : "-");
+    
+    printf(mode & S_IROTH ? "r" : "-");
+    printf(mode & S_IWOTH ? "w" : "-");
+    printf(mode & S_IXOTH ? "x" : "-");
+}
+
+void printDetailedListing(const char* dirPath, struct dirent** entryList, int numEntries) 
+{
+    printf("Permissions %-2s %-8s %-8s %8s %s\t       %s\n", "L#", "Owner", "Group", "Size", "Date", "Name");
+    for(int i = 0; i < numEntries; i++) 
+    {
+        char fullPath[PATH_MAX];
+        snprintf(fullPath, sizeof(fullPath), "%s/%s", dirPath, entryList[i]->d_name);
+        
+        struct stat fileStat;
+        if (lstat(fullPath, &fileStat) == -1) 
+        {
+            fprintf(stderr, "stat: %s: No such file or directory\n", fullPath);
+            continue;
+        }
+        
+        printFilePermissions(fileStat.st_mode);
+        printf(" ");
+        printf("%3ld ", (long)fileStat.st_nlink);
+        
+        struct passwd *pw = getpwuid(fileStat.st_uid);
+        if (pw) printf("%-8s ", pw->pw_name);
+        else printf("%-8d ", (int)fileStat.st_uid);
+        
+        struct group *gr = getgrgid(fileStat.st_gid);
+        if (gr) printf("%-8s ", gr->gr_name);
+        else printf("%-8d ", (int)fileStat.st_gid);
+        
+        // File size
+        if (S_ISCHR(fileStat.st_mode) || S_ISBLK(fileStat.st_mode)) 
+        {
+            printf("%4d,%4d ", major(fileStat.st_rdev), minor(fileStat.st_rdev));
+        } 
+        else 
+        {
+            printf("%8ld ", (long)fileStat.st_size);
+        }
+        char timeStr[32];
+        time_t now = time(NULL);
+        struct tm *tm_info = localtime(&fileStat.st_mtime);
+        
+        if (now - fileStat.st_mtime > 6 * 30 * 24 * 60 * 60) 
+        {
+            strftime(timeStr, sizeof(timeStr), "%b %d  %Y", tm_info);
+        } 
+        else 
+        {
+            strftime(timeStr, sizeof(timeStr), "%b %d %H:%M", tm_info);
+        }
+        printf("%s ", timeStr);
+        printf("%s", entryList[i]->d_name);
+        
+        if (S_ISLNK(fileStat.st_mode)) 
+        {
+            char linkTarget[PATH_MAX];
+            ssize_t len = readlink(fullPath, linkTarget, sizeof(linkTarget) - 1);
+            if (len != -1) 
+            {
+                linkTarget[len] = '\0';
+                printf(" -> %s", linkTarget);
+            }
+        }
+        
+        printf("\n");
+    }
+}
+
 int lsBuiltin(char **args) 
 {
-    /*
-        TODO: STAT FOR DETAILED DIRECTORY INFO && HIGHLIGHTING
-    */
     struct dirent **entryList;
     int numEntries;
     char* dir = ".";
+    int detailed = 0;
+    
+
     if(args[1] != NULL) // Arguments
     {
-        // if(args[1][0] != '-') //Path specified
-        // {
-        //     numEntries = scandir(args[1], &entryList, NULL, NULL);
-        // }
-        if(!strcmp(args[1], "-a"))
+        if(args[2] != NULL) //Path specified w -a/-la
         {
-            test:
-            numEntries = scandir(".", &entryList, NULL, NULL);
+            dir = args[2];
+            int (*filter)(const struct dirent*) = NULL;
+            if(strcmp(args[1], "-a") && strcmp(args[1], "-la")) filter = lsaFilter; // If not specified, don't check for hidden files
+            else if(!strcmp(args[1], "-la")) detailed = 1; // Checks for hidden files by default
+            numEntries = scandir(dir, &entryList, filter, NULL);
+        }
+        else if(args[1][0] != '-') //Path specified w/o -a/-la
+        {
+            dir = args[1];
+            numEntries = scandir(dir, &entryList, lsaFilter, NULL);
+        }
+        else if(!strcmp(args[1], "-a"))
+        {
+            numEntries = scandir(dir, &entryList, NULL, NULL);
         }
         else if(!strcmp(args[1], "-la"))
         {
-            /*
-                TODO: USE STAT FOR DETAILED DIRECTORY INFORMATION
-            */
-            numEntries = scandir(".", &entryList, NULL, NULL);
+            detailed = 1;
+            numEntries = scandir(dir, &entryList, NULL, NULL);
         }
         else 
         {
@@ -85,11 +187,16 @@ int lsBuiltin(char **args)
         return 0;
     }
 
-    for(int i = 0; i < numEntries; i++)
+    if (detailed) 
     {
-        printf("%s  ", entryList[i]->d_name);
+        printDetailedListing(dir, entryList, numEntries);
+    } else {
+        for(int i = 0; i < numEntries; i++)
+        {
+            printf("%s  ", entryList[i]->d_name);
+        }
+        printf("\n");
     }
-    printf("\n");
 
     // Garbage collection
     if (numEntries > 0 && entryList != NULL) {

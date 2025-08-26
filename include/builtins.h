@@ -2,6 +2,9 @@
 #define BUILTINS_H
 
 #include <string.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <sys/sysmacros.h>
 #define UNUSED(x) ((void)(x))
 
 typedef int (*builtinFunction)(char *args[]);
@@ -20,6 +23,9 @@ int pwdBuiltin(char **args);
 int aliasBuiltin(char **args);
 int exportBuiltin(char **args);
 int exitBuiltin(char **args);
+
+void printFilePermissions(mode_t mode);
+void printDetailedListing(const char* dirPath, struct dirent** entryList, int numEntries);
 
 /*
     TODO: UPDATE UNFINISHED DESCRIPTIONS
