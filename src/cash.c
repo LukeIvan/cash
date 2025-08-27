@@ -1,10 +1,15 @@
 #include "../include/cash.h"
 #include "../include/builtins.h"
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <pwd.h>
+#include <sys/wait.h>
 #include <unistd.h>
+#include <termios.h>
+
+struct termios orig_termios;
 
 int main(void)
 {
@@ -12,10 +17,13 @@ int main(void)
         Leave other config options here
     */
 
-    cash_loop();
+    /*
+        TODO: Handle SIGINT
+    */
+    cashLoop();
 }
 
-void cash_loop(void)
+void cashLoop(void)
 {
     char *cwd = getcwd(NULL, 0);
     if(cwd == NULL) perror("Couldn't retrieve directory info");
@@ -56,9 +64,10 @@ void cash_loop(void)
         int builtinSuccess = runBuiltinCommand(args);
         if(!builtinSuccess)
         {
-            /*
-                Process forking logic here
-            */
+           if(!runCommand(args))
+           {
+                printf("cash: \"%s\" not recognized. Try \"help\" for options.\n", args[0]);
+           }
         }
 
         // Garbage collection section
@@ -91,21 +100,82 @@ void cash_loop(void)
     free(cwd);
 }
 
+int runCommand(char *args[])
+{
+    pid_t pid;
+    int childStatus;
+
+    pid = fork();
+    if(pid == 0)
+    {
+        /*
+            INTERNAL OF CHILD PROCESS;
+        */
+        if(execvp(args[0], args) == -1) // Exec process
+        {
+            return 0;
+        }
+        // Once process is over, return to shell
+        exit(0);
+    }
+    else if(pid < 0)
+    {
+        perror("Cash: fork");
+        return 0;
+    }
+    else
+    {
+        do {
+        {
+            waitpid(pid, &childStatus, 0);
+        }
+        }while (!WIFEXITED(childStatus) && !WIFSIGNALED(childStatus));
+    }
+    return 1;
+}
+
 int splitCommandLine(char *cmdBuffer, char *args[])
 {
     int nargs = 0; 
-    for(int i = 0; i < MAXARGS; i++){
+    char *start, *end;
+    for(int i = 0; i < MAXARGS; i++)
+    {
         cmdBuffer = skipChar(cmdBuffer, WHITESPACE); 
         if(*cmdBuffer == '\0' || *cmdBuffer == '\t' || *cmdBuffer == '\n' || *cmdBuffer == '\r')
         {
             return nargs;
-        } 
-        args[nargs] = cmdBuffer;
-        nargs++;
-        cmdBuffer = strchr(cmdBuffer, WHITESPACE);
-        if(cmdBuffer == NULL) return nargs;
-        *cmdBuffer = '\0';
-        cmdBuffer++;
+        }
+
+        if(*cmdBuffer == '"') 
+        {
+            cmdBuffer++;
+            start = cmdBuffer;
+            
+            end = strchr(cmdBuffer, '"');
+            if(end == NULL) 
+            {
+                fprintf(stderr, "Cash: Unclosed double quote\n");
+                return 0;
+            }
+            
+            *end = '\0';
+            args[nargs] = start;
+            nargs++;
+            cmdBuffer = end + 1;
+        }
+        else 
+        {
+            args[nargs] = cmdBuffer;
+            nargs++;
+
+            while(*cmdBuffer != '\0' && *cmdBuffer != WHITESPACE && *cmdBuffer != '"') cmdBuffer++;
+
+            if(cmdBuffer == NULL) return nargs;
+            if(*cmdBuffer == '"') continue;
+            
+            *cmdBuffer = '\0';
+            cmdBuffer++;
+        }
     }
     fprintf(stderr, "Cash: Maximum arguments (%d) exceeded\n", MAXARGS);
     return 0;
@@ -179,3 +249,20 @@ char* reduceTilde(char* path) {
     
     return path;
 }
+
+// void enableISIG(void)
+// {
+//     tcsetattr(STDIN_FILENO, TCSAFLUSH, &orig_termios);
+// }
+
+// void disableISIG(void)
+// {
+//     tcgetattr(STDIN_FILENO, &orig_termios);
+//     atexit(enableISIG);
+
+//     struct termios new = orig_termios;
+//     new.c_lflag &= ~(ISIG);
+
+//     tcsetattr(STDIN_FILENO, TCSAFLUSH, &new);
+// }
+

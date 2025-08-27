@@ -2,6 +2,7 @@
 #define BUILTINS_H
 
 #include <string.h>
+#include <dirent.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/sysmacros.h>
@@ -31,9 +32,12 @@ void printDetailedListing(const char* dirPath, struct dirent** entryList, int nu
     TODO: UPDATE UNFINISHED DESCRIPTIONS
 */
 
+/*
+    TODO: Convert to hash table
+*/
 static builtin builtinList[] = {
     {"cd", "Change the current directory", "cd <directory>", cdBuiltin},
-    {"ls", "List directory contents UNFINISHED", "ls [-a|-la] <directory>", lsBuiltin},
+    {"ls", "List directory contents", "ls [-a|-la] <directory>", lsBuiltin},
     {"pwd", "Print the current working directory", "pwd", pwdBuiltin},
     {"export", "Set environment variables UNFINISHED", "export VAR=value", exportBuiltin},
     {"alias", "Create command aliases UNFINISHED", "alias name=command", aliasBuiltin},

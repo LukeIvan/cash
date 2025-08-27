@@ -12,10 +12,6 @@
 #include <limits.h>
 #include "../include/builtins.h"
 
-/*
-    TODO: Convert to hash table
-*/
-
 int runBuiltinCommand(char *args[])
 {   
     int i = 0;
@@ -28,6 +24,7 @@ int runBuiltinCommand(char *args[])
         }
         i++;
     }
+    if(!strcmp("logout", args[0])) exitBuiltin(args);
     return 0;
 }
 
@@ -252,7 +249,7 @@ int pwdBuiltin(char **args)
 {
     UNUSED(args);
     char *cwd = getcwd(NULL, 0);
-    if(cwd == NULL) perror("Couldn't retrieve directory info");
+    if(cwd == NULL) perror("Couldn't retrieve directory info\n");
     printf("%s\n", cwd);
     free(cwd);
     return 1;
